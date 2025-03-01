@@ -120,9 +120,11 @@ class Segment:
                     print(f"Player {player.get('player_id')} finished round {player.get('round')}.")
         # Exchange used card with new card
         old_card = cards.pop(scout_card_index)
-        cards.append(draw_card())
+        new_card = draw_card()
+        cards.append(new_card)
+        cards = sorted(cards, reverse = True)
         player["cards"] = cards
-        print(f"Player {player.get('player_id')} used card {old_card} and drew card {cards[-1]}. New cards: {cards}")
+        print(f"Player {player.get('player_id')} used card {old_card} and drew card {new_card}. New cards: {cards}")
         sleep_time = randint(1, 3)
         print(f"Player {player.get('player_id')} moved from {request_from} to {self.segment_id} using this path: {scout_path}. Waiting {sleep_time} seconds...")
         sleep(sleep_time)

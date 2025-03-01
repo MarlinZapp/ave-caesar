@@ -14,6 +14,7 @@ def init_player(segment_id):
     cards = []
     for _ in range(3):
         cards.append(draw_card())
+        cards = sorted(cards, reverse = True)
     return {
         "player_id": segment_id.split("-")[-1],
         "round": 0,
