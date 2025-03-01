@@ -135,7 +135,7 @@ class Segment:
 
 
     def handle_scout(self, scout_steps, request_from, player, scout_path, scout_card_index):
-        if self.occupied:
+        if self.occupied and request_from != self.segment_id:
             self.producer.send(request_from, value={
                 "event": "scout_result",
                 "request_from": request_from,
