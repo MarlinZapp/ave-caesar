@@ -2,7 +2,7 @@
 import sys
 import json
 
-def generate_tracks(num_tracks: int, length_of_track: int):
+def generate_tracks(num_tracks: int, length_of_track: int, length_of_caesar_area: int):
     """
     Generates a data structure with 'num_tracks' circular tracks.
     Each track has exactly 'length_of_track' segments:
@@ -40,9 +40,13 @@ def generate_tracks(num_tracks: int, length_of_track: int):
             else:
                 next_segs = [f"segment-{t}-{c+1}"]
 
+            type = "normal"
+            if c >= length_of_track - length_of_caesar_area and t == 1:
+                type = "caesar"
+
             segment = {
                 "segmentId": seg_id,
-                "type": "normal",
+                "type": type,
                 "nextSegments": next_segs
             }
             segments.append(segment)
@@ -57,15 +61,19 @@ def generate_tracks(num_tracks: int, length_of_track: int):
 
 
 def main():
-    if len(sys.argv) != 4:
-        print(f"Usage: {sys.argv[0]} <num_tracks> <length_of_track> <output_file>")
+    if len(sys.argv) != 5:
+        print(f"Usage: {sys.argv[0]} <num_tracks> <length_of_track> <length_of_caesar_area> <output_file>")
         sys.exit(1)
 
     num_tracks = int(sys.argv[1])
     length_of_track = int(sys.argv[2])
-    output_file = sys.argv[3]
+    length_of_caesar_area = int(sys.argv[3])
+    output_file = sys.argv[4]
 
-    tracks_data = generate_tracks(num_tracks, length_of_track)
+    if length_of_caesar_area < 1 or length_of_caesar_area >= length_of_track:
+        raise Exception("length_caesar_area must be at least 1 and less than length_of_track")
+
+    tracks_data = generate_tracks(num_tracks, length_of_track, length_of_caesar_area)
 
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(tracks_data, f, indent=2)
@@ -74,4 +82,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-

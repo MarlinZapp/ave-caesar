@@ -1,17 +1,11 @@
-## Run Apache Kafka Server
+## Start the Game
 
+### Run Apache Kafka
 ```
 docker compose up
 ```
 
-## Run Apache Kafka Producer
-
+### Start the game specifying the parcours file
 ```
-python producer.py
-```
-
-## Run Apache Kafka Consumer
-
-```
-python consumer.py
+python run.py parcours.json
 ```
