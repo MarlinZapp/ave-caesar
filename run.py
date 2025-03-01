@@ -16,7 +16,7 @@ def init_player(segment_id):
         cards.append(draw_card())
         cards = sorted(cards, reverse = True)
     return {
-        "player_id": segment_id.split("-")[-1],
+        "player_id": segment_id.split("-")[-2],
         "round": 0,
         "has_greeted_caesar": False,
         "cards": cards,
@@ -66,9 +66,14 @@ def main():
                     "player": init_player(segment.get("segmentId"))
                 }
             )
+            time.sleep(0.2)
 
     for segment, process in segments:
-        process.wait()
+        try:
+            process.wait()
+        except KeyboardInterrupt:
+            process.terminate()
+            process.wait()
 
 
 if __name__ == "__main__":

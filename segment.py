@@ -84,7 +84,7 @@ class Segment:
             system.state["scout_card_index"] = card_index
             system.state["scout_steps"] = cards[card_index]
             system.state["scout_path"] = [self.segment_id]
-            print(f"Player {player.get('player_id')} is now trying {card_index}. card ({cards[card_index]})")
+            print(f"Player {player.get('player_id')} is now trying card ({cards[card_index]})")
             system.trigger()
         # Continue scouting from previous segment
         elif request_from != self.segment_id:
@@ -111,7 +111,7 @@ class Segment:
         for (i, segment) in enumerate(scout_path):
             if i == 0:
                 continue
-            if segment.startswith("start-and-goal"):
+            if segment.endswith("-0"):
                 player["round"] = player.get("round") + 1
                 if player.get("round") == 3:
                     print(f"Player {player.get('player_id')} has finished!")
@@ -125,7 +125,7 @@ class Segment:
         cards = sorted(cards, reverse = True)
         player["cards"] = cards
         print(f"Player {player.get('player_id')} used card {old_card} and drew card {new_card}. New cards: {cards}")
-        sleep_time = randint(1, 3)
+        sleep_time = 3
         print(f"Player {player.get('player_id')} moved from {request_from} to {self.segment_id} using this path: {scout_path}. Waiting {sleep_time} seconds...")
         sleep(sleep_time)
         if len(cards) == 0:
@@ -158,24 +158,27 @@ def main():
     segment_id = sys.argv[1]
     next_segments = sys.argv[2].split(",")
     segment = Segment(segment_id, next_segments)
-    for msg in segment.consumer:
-        if msg.value.get("event") == "start":
-            player = msg.value.get("player")
-            print(f"Player {player.get('player_id')}: Starting scout from {segment_id} to search a path of length {player.get('cards')[0]}")
-            segment.start_scout(player, segment_id, [segment_id], player.get("cards")[0], 0)
-        elif msg.value.get("event") == "scout_result":
-            if msg.value.get("result") == "success":
-                segment.occupied = False
-            elif segment.scout_requests is not None:
-                segment.handle_scout_failure(msg.value.get("request_from"), msg.value.get("player"), msg.value.get("scout_path"))
-        elif msg.value.get("event") == "scout":
-            segment.handle_scout(
-                msg.value.get("scout_steps"),
-                msg.value.get("request_from"),
-                msg.value.get("player"),
-                msg.value.get("scout_path"),
-                msg.value.get("scout_card_index")
-            )
+    try:
+        for msg in segment.consumer:
+            if msg.value.get("event") == "start":
+                player = msg.value.get("player")
+                segment.start_scout(player, segment_id, [segment_id], player.get("cards")[0], 0)
+            elif msg.value.get("event") == "scout_result":
+                if msg.value.get("result") == "success":
+                    segment.occupied = False
+                elif segment.scout_requests is not None:
+                    segment.handle_scout_failure(msg.value.get("request_from"), msg.value.get("player"), msg.value.get("scout_path"))
+            elif msg.value.get("event") == "scout":
+                segment.handle_scout(
+                    msg.value.get("scout_steps"),
+                    msg.value.get("request_from"),
+                    msg.value.get("player"),
+                    msg.value.get("scout_path"),
+                    msg.value.get("scout_card_index")
+                )
+    except KeyboardInterrupt:
+        segment.consumer.close()
+        sys.exit(0)
 
 if __name__ == "__main__":
     main()
