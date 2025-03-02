@@ -2,41 +2,25 @@ import sys, json
 import threading
 from time import sleep
 from kafka import KafkaProducer, KafkaConsumer
-from event_system import EventSystem
 from utils import draw_card
+from dataclasses import dataclass
 
-
-class ScoutSystem(EventSystem):
-    def __init__(self, state, segment_id, next_segments, producer):
-        super().__init__(state)
-        self.segment_id = segment_id
-        self.next_segments = next_segments
-        self.producer = producer
-
-    def on_trigger(self):
-        scout_segment_index = self.state.get("scout_segment_index")
-        if scout_segment_index is None:
-            raise ValueError("scout segment index is not set")
-        scout_path = self.state.get("scout_path")
-        if scout_path is None:
-            raise ValueError("scout_path is not set")
-        scout_path.append(self.next_segments[scout_segment_index])
-        self.producer.send(self.next_segments[scout_segment_index], value={
-            "event": "scout",
-            "request_origin": self.state.get("request_origin"),
-            "player": self.state.get("player"),
-            "scout_steps": self.state.get("scout_steps"),
-            "scout_path": scout_path,
-            "scout_card_index": self.state.get("scout_card_index"),
-        })
+@dataclass
+class ScoutingState:
+    scout_segment_index: int
+    scout_path: list[str]
+    scout_steps: int
+    scout_card_index: int
+    request_origin: str
+    player: dict
 
 
 class Segment:
-    def __init__(self, segment_id, segment_type, next_segments):
+    def __init__(self, segment_id : str, segment_type : str, next_segments : list[str]):
         self.segment_id = segment_id
         self.segment_type = segment_type
         self.next_segments = next_segments
-        self.scout_requests = dict()
+        self.scouting_states = dict()
         self.consumer = KafkaConsumer(
             segment_id,
             bootstrap_servers=['localhost:29092', 'localhost:39092', 'localhost:49092'],
@@ -49,58 +33,68 @@ class Segment:
         self.occupied = False
 
 
+    def send_scout_message(self, state: ScoutingState):
+        state.scout_path.append(self.next_segments[state.scout_segment_index])
+        self.producer.send(self.next_segments[state.scout_segment_index], value={
+            "event": "scout",
+            "request_origin": state.request_origin,
+            "player": state.player,
+            "scout_steps": state.scout_steps,
+            "scout_path": state.scout_path,
+            "scout_card_index": state.scout_card_index,
+        })
+
+
     def start_scout(self, player, request_origin, scout_path, scout_steps, scout_card_index):
         # print(f"Starting scout from {request_origin} to search a path of length {player.get('cards')[0]}")
         if request_origin == self.segment_id:
             print(f"Player {player.get('player_id')} is trying to play the card {player['cards'][0]}")
-        system = ScoutSystem({
-            "player": player,
-            "request_origin": request_origin,
-            "scout_steps": scout_steps,
-            "scout_card_index": scout_card_index,
-            "scout_segment_index": 0,
-            "scout_path": scout_path
-        }, self.segment_id, self.next_segments, self.producer)
-        self.scout_requests[request_origin] = system
-        system.trigger()
+        state = ScoutingState(
+            player=player,
+            request_origin=request_origin,
+            scout_segment_index=0,
+            scout_path=scout_path,
+            scout_steps=scout_steps,
+            scout_card_index=scout_card_index,
+        )
+        self.send_scout_message(state)
+        self.scouting_states[request_origin] = state
 
 
     def handle_scout_failure(self, request_origin, player):
         cards = player.get("cards")
-        system = self.scout_requests[request_origin]
-        if system is None:
-            raise ValueError("Could not find scout system for segment")
-        segment_index = system.state.get("scout_segment_index")
-        card_index = system.state.get("scout_card_index")
-        system.state["scout_path"].pop() # Segment that failed
-        system.state["scout_path"].pop() # This segment
-        last_visited_segment = None
-        if len(system.state["scout_path"]) > 0:
-            last_visited_segment = system.state["scout_path"].pop() # Previous segment
+        state : ScoutingState = self.scouting_states[request_origin]
+        if state is None:
+            raise ValueError("Could not find scouting state for segment")
+        segment_index = state.scout_segment_index
+        card_index = state.scout_card_index
+        state.scout_path.pop() # Segment that failed
+        state.scout_path.pop() # This segment
+        previous_segment = None
+        if len(state.scout_path) > 0:
+            previous_segment = state.scout_path.pop() # Previous segment
 
         # try next segment
         if segment_index is not None and segment_index < len(self.next_segments) - 1:
             segment_index = segment_index + 1
-            system.state["scout_segment_index"] = segment_index
-            if last_visited_segment is not None:
-                system.state["scout_path"].append(last_visited_segment)
-            system.state["scout_path"].append(self.segment_id)
-            system.trigger()
+            state.scout_segment_index = segment_index
+            if previous_segment is not None:
+                state.scout_path.append(previous_segment)
+            state.scout_path.append(self.segment_id)
+            self.send_scout_message(state)
         # try next card if scouting started from this segment and all segments have been scouted
         elif request_origin == self.segment_id and segment_index == len(self.next_segments) - 1 and card_index < len(cards) - 1:
-            segment_index = 0
-            system.state["scout_segment_index"] = segment_index
-            card_index = card_index + 1
-            system.state["scout_card_index"] = card_index
-            system.state["scout_steps"] = cards[card_index]
-            system.state["scout_path"] = [self.segment_id]
+            state.scout_segment_index = 0
+            state.scout_card_index = card_index + 1
+            state.scout_steps = cards[card_index]
+            state.scout_path = [self.segment_id]
             print(f"Player {player.get('player_id')} is trying to play the card {cards[card_index]}")
-            system.trigger()
+            self.send_scout_message(state)
         # Continue scouting from previous segment or skip turn
         else:
-            if last_visited_segment is not None:
-                # print(f"Tried all ways from {self.segment_id}, moving back to {last_visited_segment}.")
-                self.producer.send(last_visited_segment, value={
+            if previous_segment is not None:
+                # print(f"Tried all ways from {self.segment_id}, moving back to {previous_segment}.")
+                self.producer.send(previous_segment, value={
                     "event": "scout_result",
                     "request_origin": request_origin,
                     "result": "failure",
@@ -184,7 +178,7 @@ def handle_message(msg, segment, segment_id):
     elif msg.value.get("event") == "scout_result":
         if msg.value.get("result") == "success":
             segment.occupied = False
-        elif segment.scout_requests is not None:
+        elif segment.scouting_states is not None:
             segment.handle_scout_failure(msg.value.get("request_origin"), msg.value.get("player"))
 
     elif msg.value.get("event") == "scout":
