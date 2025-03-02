@@ -107,27 +107,33 @@ class Segment:
                     "player": player,
                 })
             else:
-                print(f"Player {player.get('player_id')} has no possibility to move. Skipping turn (waiting 10 seconds).")
-                sleep(10)
+                print(f"Player {player.get('player_id')} has no possibility to move. Skipping turn (waiting 5 seconds).")
+                sleep(5)
                 self.start_scout(player, self.segment_id, [self.segment_id], cards[0], 0)
 
 
     def move_player_to_this_segment(self, request_origin, player, scout_path, scout_card_index):
         self.occupied = True
+        if self.segment_type == "caesar":
+            player["has_greeted_caesar"] = True
         self.producer.send(request_origin, value={
             "event": "scout_result",
             "request_origin": request_origin,
             "result": "success",
-            "player": player
+            "player": player,
+            "scout_path": scout_path,
         })
         cards = player.get("cards")
         for (i, segment) in enumerate(scout_path):
-            if i == 0:
+            if i == 0: # start segment
                 continue
             if segment.endswith("-0"):
                 player["round"] = player.get("round") + 1
                 if player.get("round") == 3:
-                    print(f"Player {player.get('player_id')} has finished!")
+                    if player.get("has_greeted_caesar"):
+                        print(f"Player {player.get('player_id')} has finished!")
+                    else:
+                        print(f"Player {player.get('player_id')} has finished, but has not greeted Caesar. He lost.")
                     self.occupied = False
                     return
                 else:
@@ -139,7 +145,7 @@ class Segment:
         cards = sorted(cards, reverse = True)
         player["cards"] = cards
         print(f"Player {player.get('player_id')} used card {old_card} and drew card {new_card}. New cards: {cards}")
-        sleep_time = 10
+        sleep_time = 5
         print(f"Player {player.get('player_id')} moved from {request_origin} to {self.segment_id} using this path: {scout_path}. Waiting {sleep_time} seconds...")
         sleep(sleep_time)
         if len(cards) == 0:

@@ -8,6 +8,9 @@ def get_next_segments(segment_types: list[str], track: int, num_tracks, segment:
     next_segment = (segment + 1) % num_segments
     next_seg_type = segment_types[next_segment]
     segments = []
+    # Additional caesar greeting segment track
+    if next_seg_type == "start-goal":
+        num_tracks = num_tracks + 1
     for next_track in range(1, num_tracks + 1):
         if next_seg_type == "bottleneck":
             if next_track != 1:
@@ -33,7 +36,7 @@ def get_next_segments(segment_types: list[str], track: int, num_tracks, segment:
     return segments
 
 
-def generate_tracks(num_tracks: int, num_segments: int, length_of_caesar_area: int):
+def generate_tracks(num_tracks: int, num_segments: int):
     """
     Generates a data structure with 'num_tracks' circular tracks.
     Each track has exactly 'length_of_track' segments:
@@ -52,6 +55,16 @@ def generate_tracks(num_tracks: int, num_segments: int, length_of_caesar_area: i
             segment_types.append("wall-divided")
         else:
             segment_types.append("normal")
+
+    # Add additional track for Caesar greeting segment
+    all_tracks.append({
+        "trackId" : str(num_tracks + 1),
+        "segments" : [{
+            "segmentId" : f"segment-{num_tracks + 1}-0",
+            "type" : "caesar",
+            "nextSegments" : get_next_segments(segment_types, num_tracks + 1, num_tracks, 0, num_segments)
+        }]
+    })
 
     for track in range(1, num_tracks + 1):
         track_id = str(track)
@@ -91,19 +104,15 @@ def generate_tracks(num_tracks: int, num_segments: int, length_of_caesar_area: i
 
 
 def main():
-    if len(sys.argv) != 5:
-        print(f"Usage: {sys.argv[0]} <num_tracks> <num_segments> <length_of_caesar_area> <output_file>")
+    if len(sys.argv) != 4:
+        print(f"Usage: {sys.argv[0]} <num_tracks> <num_segments> <output_file>")
         sys.exit(1)
 
     num_tracks = int(sys.argv[1])
     num_segments = int(sys.argv[2])
-    length_of_caesar_area = int(sys.argv[3])
-    output_file = sys.argv[4]
+    output_file = sys.argv[3]
 
-    if length_of_caesar_area < 1:
-        raise Exception("length_caesar_area must be at least 1")
-
-    tracks_data = generate_tracks(num_tracks, num_segments, length_of_caesar_area)
+    tracks_data = generate_tracks(num_tracks, num_segments)
 
     with open(output_file, "w", encoding="utf-8") as f:
         json.dump(tracks_data, f, indent=2)
