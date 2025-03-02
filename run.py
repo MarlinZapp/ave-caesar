@@ -30,7 +30,7 @@ def read_tracks(path: str) -> list:
 def start_segment(type: str, segment_id: str, next_segments: list[str]):
     print(f"Starting segment {segment_id}")
     process = subprocess.Popen(
-        "python segment.py " + segment_id + " " + ",".join(next_segments),
+        "python segment.py " + segment_id + " " + type + " " + ",".join(next_segments),
         shell=True,
         text=True  # Ensures output is treated as text instead of bytes
     )
@@ -66,7 +66,7 @@ def main():
                     "player": init_player(segment.get("segmentId"))
                 }
             )
-            time.sleep(0.2)
+            time.sleep(1)
 
     for segment, process in segments:
         try:
