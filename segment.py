@@ -180,7 +180,7 @@ class Segment:
 
     def move_player_to_best_segment(self, scout_state: ScoutingState):
         player = scout_state.player
-        possible_targets = scout_state.possible_targets
+        possible_targets = [target for targets in scout_state.targets_found_per_card.values() for target in targets]
         if len(possible_targets) == 0:
             print(f"Player {player.get('player_id')} can not move. Skipping turn and waiting 10 seconds...")
             sleep(10)
@@ -200,7 +200,7 @@ class Segment:
         if preferred_card is None or preferred_target is None:
             highest_card = 0
             for (card, targets) in scout_state.targets_found_per_card.items():
-                if int(card) > highest_card:
+                if int(card) > highest_card and len(targets) > 0:
                     highest_card = int(card)
                     preferred_card = highest_card
                     preferred_target = list(targets)[0]
@@ -219,6 +219,7 @@ class Segment:
 
     def handle_move(self, player: dict, joined_path: str):
         path = joined_path.split(",")
+        self.occupied = True
         print(f"Player {player.get('player_id')} moved from {path[0]} to {self.segment_id} using this path: {path}.")
         if self.segment_type == "caesar":
             player["has_greeted_caesar"] = True
