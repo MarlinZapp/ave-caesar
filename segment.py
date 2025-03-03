@@ -5,14 +5,45 @@ from kafka import KafkaProducer, KafkaConsumer
 from utils import draw_card
 from dataclasses import dataclass
 
+
+@dataclass(frozen=True)
+class Target:
+    segment_id: str
+    segment_type: str
+    # concatenated path to reach this target
+    path: str
+
+    def to_dict(self):
+        return {
+            "segment_id": self.segment_id,
+            "segment_type": self.segment_type,
+            "path": self.path
+        }
+
+def target_from_dict(d: dict):
+    return Target(d["segment_id"], d["segment_type"], d["path"])
+
 @dataclass
 class ScoutingState:
     scout_segment_index: int
     scout_path: list[str]
     scout_steps: int
-    scout_card_index: int
+    scout_for_card: int
     request_origin: str
     player: dict
+    possible_targets: set[Target]
+    visited_segments: list[str]
+    targets_found_per_card: dict[str, set[Target]]
+
+
+def remove_card(player: dict, card: int) -> dict:
+        cards : list[int] = player["cards"]
+        for i in range(len(cards)):
+            if cards[i] == card:
+                cards.pop(i)
+                break
+        player["cards"] = cards
+        return player
 
 
 class Segment:
@@ -20,7 +51,7 @@ class Segment:
         self.segment_id = segment_id
         self.segment_type = segment_type
         self.next_segments = next_segments
-        self.scouting_states = dict()
+        self.scouting_states : dict[str, ScoutingState] = dict()
         self.consumer = KafkaConsumer(
             segment_id,
             bootstrap_servers=['localhost:29092', 'localhost:39092', 'localhost:49092'],
@@ -33,96 +64,170 @@ class Segment:
         self.occupied = False
 
 
-    def send_scout_message(self, state: ScoutingState):
+    def scout(self, state: ScoutingState):
         state.scout_path.append(self.next_segments[state.scout_segment_index])
+        if self.next_segments[state.scout_segment_index] in state.visited_segments:
+            self.scout_next_segment(state)
+            return
+
+        serializable_targets = [target.to_dict() for target in state.possible_targets]
+
         self.producer.send(self.next_segments[state.scout_segment_index], value={
             "event": "scout",
             "request_origin": state.request_origin,
             "player": state.player,
             "scout_steps": state.scout_steps,
             "scout_path": state.scout_path,
-            "scout_card_index": state.scout_card_index,
+            "scout_for_card": state.scout_for_card,
+            "possible_targets": serializable_targets,
+            "visited_segments": state.visited_segments
         })
 
 
-    def start_scout(self, player, request_origin, scout_path, scout_steps, scout_card_index):
+    def start_scout(
+        self, player, request_origin: str, scout_path: list[str], scout_steps: int, scout_for_card: int,
+        possible_targets: set[Target], visited_segments: list[str]):
         # print(f"Starting scout from {request_origin} to search a path of length {player.get('cards')[0]}")
-        if request_origin == self.segment_id:
-            print(f"Player {player.get('player_id')} is trying to play the card {player['cards'][0]}")
+        # if request_origin == self.segment_id:
+            # print(f"Player {player.get('player_id')} is scouting targets for card {player['cards'][0]}")
         state = ScoutingState(
             player=player,
             request_origin=request_origin,
             scout_segment_index=0,
             scout_path=scout_path,
             scout_steps=scout_steps,
-            scout_card_index=scout_card_index,
+            scout_for_card=scout_for_card,
+            possible_targets=possible_targets,
+            targets_found_per_card=dict(),
+            visited_segments=visited_segments
         )
-        self.send_scout_message(state)
+        self.scout(state)
         self.scouting_states[request_origin] = state
 
 
-    def handle_scout_failure(self, request_origin, player):
-        cards = player.get("cards")
-        state : ScoutingState = self.scouting_states[request_origin]
-        if state is None:
-            raise ValueError("Could not find scouting state for segment")
-        segment_index = state.scout_segment_index
-        card_index = state.scout_card_index
-        state.scout_path.pop() # Segment that failed
-        state.scout_path.pop() # This segment
+    def handle_scout_result(self, request_origin: str, scout_path: list[str], possible_targets: set[Target], visited_segments: list[str]):
+        state = self.scouting_states[request_origin]
+        for segment in visited_segments:
+            if segment not in state.visited_segments:
+                state.visited_segments.append(segment)
+        for target in possible_targets:
+            state.possible_targets.add(target)
+
+        finished_scouting = self.scout_next_segment(state)
+        if finished_scouting and request_origin == self.segment_id:
+            self.move_player_to_best_segment(state)
+
+
+    def scout_next_segment(self, scout_state: ScoutingState) -> bool:
+        """
+        Scout the next segment or card in the player's hand.
+        Returns True if all possibilites have been tried.
+        """
+        player = scout_state.player
+        request_origin = scout_state.request_origin
+        cards : list[int] = player["cards"]
+        segment_index = scout_state.scout_segment_index
+        scout_state.scout_path.pop() # The segment that has been looked up in the last scout
+        scout_state.scout_path.pop() # This segment
         previous_segment = None
-        if len(state.scout_path) > 0:
-            previous_segment = state.scout_path.pop() # Previous segment
+        if len(scout_state.scout_path) > 0:
+            previous_segment = scout_state.scout_path.pop() # Segment that lead to this segment
 
         # try next segment
         if segment_index is not None and segment_index < len(self.next_segments) - 1:
             segment_index = segment_index + 1
-            state.scout_segment_index = segment_index
+            scout_state.scout_segment_index = segment_index
             if previous_segment is not None:
-                state.scout_path.append(previous_segment)
-            state.scout_path.append(self.segment_id)
-            self.send_scout_message(state)
+                scout_state.scout_path.append(previous_segment)
+            scout_state.scout_path.append(self.segment_id)
+            self.scout(scout_state)
         # try next card if scouting started from this segment and all segments have been scouted
-        elif request_origin == self.segment_id and segment_index == len(self.next_segments) - 1 and card_index < len(cards) - 1:
-            state.scout_segment_index = 0
-            state.scout_card_index = card_index + 1
-            state.scout_steps = cards[card_index]
-            state.scout_path = [self.segment_id]
-            print(f"Player {player.get('player_id')} is trying to play the card {cards[card_index]}")
-            self.send_scout_message(state)
-        # Continue scouting from previous segment or skip turn
         else:
-            if previous_segment is not None:
-                # print(f"Tried all ways from {self.segment_id}, moving back to {previous_segment}.")
-                self.producer.send(previous_segment, value={
-                    "event": "scout_result",
-                    "request_origin": request_origin,
-                    "result": "failure",
-                    "player": player,
-                })
+            next_card = None
+            if request_origin == self.segment_id:
+                old_card = scout_state.scout_for_card
+                scout_state.targets_found_per_card[str(old_card)] = scout_state.possible_targets
+                for card in cards:
+                    if str(card) not in scout_state.targets_found_per_card.keys():
+                        next_card = card
+
+            if next_card is not None:
+                scout_state.scout_segment_index = 0
+                scout_state.scout_for_card = next_card
+                scout_state.scout_steps = next_card
+                scout_state.scout_path = [self.segment_id]
+                scout_state.possible_targets = set()
+                scout_state.visited_segments = []
+                # print(f"Player {player.get('player_id')} is scouting targets for card {next_card}")
+                self.scout(scout_state)
+
+            # Continue scouting from previous segment or finish scouting
             else:
-                print(f"Player {player.get('player_id')} has no possibility to move. Skipping turn (waiting 5 seconds).")
-                sleep(5)
-                self.start_scout(player, self.segment_id, [self.segment_id], cards[0], 0)
+                if previous_segment is not None:
+                    # print(f"Tried all ways from {self.segment_id}, moving back to {previous_segment}.")
+                    serializable_targets = [target.to_dict() for target in scout_state.possible_targets]
+                    self.producer.send(previous_segment, value={
+                        "event": "scout_result",
+                        "request_origin": request_origin,
+                        "player": player,
+                        "possible_targets": serializable_targets,
+                        "visited_segments": scout_state.visited_segments + [self.segment_id]
+                    })
+                else:
+                    return True
+        return False
 
 
-    def move_player_to_this_segment(self, request_origin, player, scout_path, scout_card_index):
-        self.occupied = True
+    def move_player_to_best_segment(self, scout_state: ScoutingState):
+        player = scout_state.player
+        possible_targets = scout_state.possible_targets
+        if len(possible_targets) == 0:
+            print(f"Player {player.get('player_id')} can not move. Skipping turn and waiting 10 seconds...")
+            sleep(10)
+            card = player["cards"][0]
+            self.start_scout(scout_state.player, self.segment_id, [self.segment_id], card, card, set(), [])
+            return
+        preferred_card = None
+        preferred_target = None
+        if not player["has_greeted_caesar"]:
+            for (card, targets) in scout_state.targets_found_per_card.items():
+                for target in targets:
+                    if target.segment_type == "caesar":
+                        preferred_card = int(card)
+                        preferred_target = target
+                        break
+
+        if preferred_card is None or preferred_target is None:
+            highest_card = 0
+            for (card, targets) in scout_state.targets_found_per_card.items():
+                if int(card) > highest_card:
+                    highest_card = int(card)
+                    preferred_card = highest_card
+                    preferred_target = list(targets)[0]
+
+        if preferred_card is None or preferred_target is None:
+            raise Exception("No preferred target found.")
+        self.occupied = False
+        player = remove_card(player, preferred_card)
+        self.producer.send(preferred_target.segment_id, value={
+            "event": "move",
+            "player": player,
+            "path": preferred_target.path,
+        })
+        return
+
+
+    def handle_move(self, player: dict, joined_path: str):
+        path = joined_path.split(",")
+        print(f"Player {player.get('player_id')} moved from {path[0]} to {self.segment_id} using this path: {path}.")
         if self.segment_type == "caesar":
             player["has_greeted_caesar"] = True
-        self.producer.send(request_origin, value={
-            "event": "scout_result",
-            "request_origin": request_origin,
-            "result": "success",
-            "player": player,
-            "scout_path": scout_path,
-        })
-        cards = player.get("cards")
-        for (i, segment) in enumerate(scout_path):
+            print(f"Player {player.get('player_id')} greeted Caesar.")
+        for (i, segment) in enumerate(path):
             if i == 0: # start segment
                 continue
             if segment.endswith("-0"):
-                player["round"] = player.get("round") + 1
+                player["round"] = player["round"] + 1
                 if player.get("round") == 3:
                     if player.get("has_greeted_caesar"):
                         print(f"Player {player.get('player_id')} has finished!")
@@ -132,25 +237,36 @@ class Segment:
                     return
                 else:
                     print(f"Player {player.get('player_id')} finished round {player.get('round')}.")
-        # Exchange used card with new card
-        old_card = cards.pop(scout_card_index)
         new_card = draw_card()
-        cards.append(new_card)
-        cards = sorted(cards, reverse = True)
-        player["cards"] = cards
-        print(f"Player {player.get('player_id')} used card {old_card} and drew card {new_card}. New cards: {cards}")
-        sleep_time = 5
-        print(f"Player {player.get('player_id')} moved from {request_origin} to {self.segment_id} using this path: {scout_path}. Waiting {sleep_time} seconds...")
+        player["cards"].append(new_card)
+        sleep_time = 10
+        print(f"Player {player.get('player_id')} used card {len(path)-1} and drew card {new_card}. New cards: {player['cards']}. Waiting {sleep_time} seconds...")
         sleep(sleep_time)
-        if len(cards) == 0:
+        if len(player["cards"]) == 0:
             print(f"Player {player.get('player_id')} has no more cards. He lost.")
             return
         else:
             # Play next card
-            self.start_scout(player, self.segment_id, [self.segment_id], cards[0], 0)
+            card = player["cards"][0]
+            self.start_scout(player, self.segment_id, [self.segment_id], card, card, set(), [])
 
 
-    def handle_scout(self, scout_steps, request_origin, player, scout_path, scout_card_index):
+    def found_target(self, request_origin: str, scout_path: list[str], scout_for_card: int):
+        target = Target(segment_id=self.segment_id, segment_type=self.segment_type, path=",".join(scout_path)).to_dict()
+        target_answer : list[dict] = [target]
+        # Send success message to previous segment
+        self.producer.send(scout_path[-2], value={
+            "event": "scout_result",
+            "request_origin": request_origin,
+            "scout_path": scout_path,
+            "possible_targets": target_answer,
+            "visited_segments": [self.segment_id]
+        })
+
+
+    def handle_scout(
+        self, scout_steps: int, request_origin: str, player, scout_path: list[str], scout_for_card: int,
+        possible_targets: set[Target], visited_segments: list[str]):
         # print(f"Player {player.get('player_id')} is scouting {self.segment_id}")
         if self.occupied and request_origin != self.segment_id:
             scout_path.pop() # get rid of this segment
@@ -159,35 +275,48 @@ class Segment:
             self.producer.send(last_visited_segment, value={
                 "event": "scout_result",
                 "request_origin": request_origin,
-                "result": "failure",
-                "player": player,
+                "possible_targets": dict(), # no new targets
+                "visited_segments": [self.segment_id]
             })
             return
         if scout_steps == 1:
-            self.move_player_to_this_segment(request_origin, player, scout_path, scout_card_index)
+            self.found_target(request_origin, scout_path, scout_for_card)
         else:
-            self.start_scout(player, request_origin, scout_path, scout_steps-1, scout_card_index)
+            self.start_scout(player, request_origin, scout_path, scout_steps-1, scout_for_card, possible_targets, visited_segments)
 
 
-def handle_message(msg, segment, segment_id):
-    """Processes a message in a separate thread."""
-    if msg.value.get("event") == "start":
-        player = msg.value.get("player")
-        segment.start_scout(player, segment_id, [segment_id], player.get("cards")[0], 0)
+    def handle_message(self, msg):
+        """Processes a message in a separate thread."""
 
-    elif msg.value.get("event") == "scout_result":
-        if msg.value.get("result") == "success":
-            segment.occupied = False
-        elif segment.scouting_states is not None:
-            segment.handle_scout_failure(msg.value.get("request_origin"), msg.value.get("player"))
+        possible_targets_json : list[dict] | None = msg.get("possible_targets")
+        possible_targets = set([target_from_dict(target) for target in possible_targets_json or []])
 
-    elif msg.value.get("event") == "scout":
-        segment.handle_scout(
-            msg.value.get("scout_steps"),
-            msg.value.get("request_origin"),
-            msg.value.get("player"),
-            msg.value.get("scout_path"),
-            msg.value.get("scout_card_index"))
+        if msg.get("event") == "start":
+            player = msg.get("player")
+            card = player.get("cards")[0]
+            self.start_scout(player, self.segment_id, [self.segment_id], card, card, set(), [])
+
+        elif msg.get("event") == "scout_result":
+            self.handle_scout_result(
+                msg.get("request_origin"),
+                msg.get("scout_path"),
+                possible_targets,
+                msg.get("visited_segments")
+            )
+
+        elif msg.get("event") == "scout":
+            self.handle_scout(
+                msg.get("scout_steps"),
+                msg.get("request_origin"),
+                msg.get("player"),
+                msg.get("scout_path"),
+                msg.get("scout_for_card"),
+                possible_targets,
+                msg.get("visited_segments")
+            )
+
+        elif msg.get("event") == "move":
+            self.handle_move(msg.get("player"), msg.get("path"))
 
 
 def main():
@@ -200,7 +329,7 @@ def main():
     segment = Segment(segment_id, segment_type, next_segments)
     try:
         for msg in segment.consumer:
-            thread = threading.Thread(target=handle_message, args=(msg, segment, segment_id))
+            thread = threading.Thread(target=segment.handle_message, args=(msg.value,))
             thread.start()
     except KeyboardInterrupt:
         segment.consumer.close()

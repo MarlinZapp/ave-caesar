@@ -60,13 +60,15 @@ def main():
     print("Sending start events")
     for segment, process in segments:
         if segment.get("type") == "start-goal":
+            player = init_player(segment.get("segmentId"))
             producer.send(segment.get("segmentId"),
                 {
                     "event": "start",
-                    "player": init_player(segment.get("segmentId"))
+                    "player": player
                 }
             )
-            time.sleep(1)
+            print(f"Player {player.get('player_id')} starts at {segment.get('segmentId')} with cards {player.get('cards')}")
+            time.sleep(3)
 
     for segment, process in segments:
         try:
