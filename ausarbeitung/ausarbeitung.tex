@@ -1,0 +1,41 @@
+\documentclass[]{article}
+\title{SA4E - Übung 3}
+\author{Marlin Zapp}
+\pdfminorversion=6
+
+\usepackage[outputdir=output]{minted} % for code snippets
+\usepackage[T1]{fontenc}
+\usepackage[ngerman]{babel}
+\usepackage{csquotes}
+\usepackage{svg}
+\usepackage[font={small},hang,labelfont=bf]{caption}
+\usepackage{hyperref} % has autoref
+\usepackage{pdfpages}
+\usepackage{color}
+\usepackage[dvipsnames,svgnames,table]{xcolor}
+\usepackage{fancyhdr}
+
+%bib
+\usepackage[
+style=apa,
+backend=biber,
+maxcitenames=1,
+maxbibnames=999
+]{biblatex}
+\addbibresource{quellen.bib}
+
+\begin{document}
+\maketitle
+
+In dieser Übung geht es darum, das Spiel \emph{Ave Caesar} so zu implementieren, dass alle Spielbrett-Segmente einzelne Programme sind, die miteinander über eine Streaming-Architektur kommunizieren.
+
+\tableofcontents
+
+\section{Spielprinzip}
+\label{sec:spielprinzip}
+
+Das Grundprinzip von \emph{Ave Caesar} ist, dass $n$ Spieler versuchen, jeweils zuerst drei Runden eines Wagenrennens über einen Parcours zu beenden. Auf dem Weg muss jeder Spieler mindestens einmal auf einem vordefinierten Feld stehen bleiben, um Caesar zu grüßen.
+
+
+
+\end{document}
