@@ -54,7 +54,12 @@ Grundsätzlich besteht ein normaler Spur-Abschnitt aus einem Segment \texttt{seg
     \item Im $0$-ten Abschnitt befindet sich ein zusätzliches Segment \texttt{segment-<num\_tracks+1>-0}, auf dem nach Runde 1, 2 oder 3 Caesar gegrüßt werden muss.
     \item Abschnitte des Typs \emph{bottleneck} sind Engstellen. Hier existiert nur das Segment \texttt{segment-0-<j>}, während alle anderen Spuren in diesem Abschnitt kein Segment besitzen.
 \end{itemize}
-Die Parcours-Generierung definiert abhängig vom aktuellen und nächsten Segment-Typ, welche Segmente auf ein bestimmtes Segment folgen. Dies wird in der JSON-Datei als \texttt{nextSegments} definiert. Wenn zum Beispiel zwei Abschnitte vom Typ \emph{wall-divided} aufeinander folgen, dann ist kein Spurwechsel möglich und jedes \texttt{segment-<i>-<j>} hat ein Array \texttt{nextSegments} der Länge 1 mit \texttt{segment-<i>-<j+1>} als einzigem Eintrag.
+Die Parcours-Generierung definiert abhängig vom aktuellen und nächsten Segment-Typ, welche Segmente auf ein bestimmtes Segment folgen. Dies wird in der JSON-Datei als \texttt{nextSegments} definiert. Wenn zum Beispiel zwei Abschnitte vom Typ \emph{wall-divided} aufeinander folgen, dann ist kein Spurwechsel möglich und jedes \texttt{segment-<i>-<j>} hat ein Array \texttt{nextSegments} der Länge 1 mit \texttt{segment-<i>-<j+1>} als einzigem Eintrag. \autoref{fig:parcours} versucht, die verfügbaren Segment-Typen anschaulich zu machen.
+\begin{figure}
+    \caption{Die Graphik veranschaulicht den Beispiel-Parcours, der in der \texttt{parcours.json} zu finden ist, um einen Eindruck für die drei verschiedenen Segment-Typen zu geben. In diesem Parcours würden drei Spieler spielen. Die möglichen Züge sind über die \texttt{nextSegments} in der \texttt{parcours.json} nachvollziehbar.}
+    \label{fig:parcours}
+    \includegraphics[width=\textwidth]{parcours.png}
+\end{figure}
 
 \subsection{Initialisierung}
 \label{subsec:initialisierung}
