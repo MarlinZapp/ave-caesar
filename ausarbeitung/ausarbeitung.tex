@@ -3,7 +3,7 @@
 \author{Marlin Zapp}
 \pdfminorversion=6
 
-\usepackage{minted} % for code snippets
+\usepackage[outputdir=output]{minted} % for code snippets
 \usepackage[T1]{fontenc}
 \usepackage[ngerman]{babel}
 \usepackage{csquotes}
@@ -74,7 +74,7 @@ player = {
     "cards": cards,
 }
 \end{minted}
-Jedes Segment besitzt einen Apache Kafka Consumer und einen Apache Kafka Producer und kommuniziert darüber mit anderen Segmenten. Der Consumer und Producer verbindet sich jeweils mit den drei Server-Instanzen. Um das Spiel zu starten werden die Spielerinformationen in einem \emph{start}-Event an die Start-Segmente geschickt. Dabei gibt es einen großen Delay zwischen den Initialisierungs-Nachrichten, damit die Spieler ungefähr der Reihe nach am Zug sind.
+Jedes Segment besitzt einen Apache Kafka Consumer und einen Apache Kafka Producer und kommuniziert darüber mit anderen Segmenten. Der Consumer und Producer verbindet sich jeweils mit den drei Server-Instanzen. Um das Spiel zu starten, werden die Spielerinformationen in einem \emph{start}-Event an die Start-Segmente geschickt. Dabei gibt es einen großen Delay zwischen den Initialisierungs-Nachrichten, damit die Spieler ungefähr der Reihe nach am Zug sind.
 
 \subsection{Felder erkunden}
 \label{subsec:scouting}
@@ -84,6 +84,13 @@ Sobald ein Spieler am Zug ist, wird von dem Segment, auf dem er sich befindet, e
 \subsection{Bewegung}
 \label{subsec:move}
 
-Nach der Erkundung werden die Ziel-Segmente verglichen. Das \emph{Caesar}-Segment wird bevorzugt, ansonsten wird die größt-möglichste Karte gespielt. Eine \emph{move}-Nachricht wird an das Ziel-Segment geschickt und die Spieler-Informationen werden aktualisiert. In dem Zuge wird mithilfe der Information, welcher Pfad genommen wurde, auch überprüft, ob der Spieler eine Runde vollendet hat und das Spiel mit oder ohne Caesar-Gruß beendet hat.
+Nach der Erkundung werden die Ziel-Segmente verglichen. Das \emph{Caesar}-Segment wird bevorzugt, ansonsten wird die größt-mögliche Karte gespielt. Eine \emph{move}-Nachricht wird an das Ziel-Segment geschickt und die Spieler-Informationen werden aktualisiert. In dem Zuge wird mithilfe der Information, welcher Pfad genommen wurde, auch überprüft, ob der Spieler eine Runde vollendet hat und das Spiel mit oder ohne Caesar-Gruß beendet hat.
+
+\section{Fazit}
+\label{sec:conclusion}
+
+Das Aufsetzen der Apache Kafka Container war sehr simpel, die Muster-Datei für ein Server-Cluster aus drei Instanzen hat direkt funktioniert. Die Kommunikation über Apache Kafka in der Implementierung war sehr intiutiv. Man konnte die üblichen Verfahren der nachrichtenbasierten Kommunikation problemlos anwenden und das Producer-Consumer-Konzept war für die Aufgabe gut geeignet.\par
+In der vorliegenden Implementierung kann es zu Fehlern kommen, wenn Spieler gleichzeitig spielen, da die Bestimmung von besetzten Feldern nicht isoliert abläuft. Als zukünftige Aufgabe könnte man die Implementierung verbessern, indem die Reihenfolge der Spieler nicht über ein Delay geregelt wird, sondern über eine sequentielle Abfolge von Spielzügen. Dann könnten keine Probleme mehr auftreten.\par
+Ein Problem der Implementierung ist, dass die Züge sehr lange dauern, da die Sequentialisierung annähernd über ein Delay erreicht wird. Außerdem ist die Zugdauer so lange, da in der Tiefensuche nach einem passenden Feld Nachrichten von vielen Producern zu vielen Consumern gesendet werden müssen. Jedes Segment in der Reichweite der Karte sendet mindestens eine Nachricht. Dies ist jedoch dem Anwendungsbeispiel geschuldet, da Streaming-Architekturen natürlich nicht für die Implementierung von Spiel-Logik gedacht sind.
 
 \end{document}
